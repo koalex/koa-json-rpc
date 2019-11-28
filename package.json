@@ -1,7 +1,7 @@
 {
   "name": "koa-json-rpc",
   "version": "0.9.0",
-  "description": "JSON-RPC 2.0 router for Koa.js.",
+  "description": "JSON-RPC 2.0 middleware for Koa.js.",
   "main": "index.js",
   "scripts": {
     "test": "mocha \"./test/*.js\" --recursive --exit",
