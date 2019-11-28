@@ -1,0 +1,52 @@
+{
+  "name": "koa-json-rpc",
+  "version": "0.9.0",
+  "description": "JSON-RPC 2.0 router for Koa.js.",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha \"./test/*.js\" --recursive --exit",
+    "check-updates": "ncu",
+    "check-updates:upgrade": "ncu -u",
+    "audit": "npm audit --audit-level high"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "npm test",
+      "pre-push": "npm test"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/koalex/koa-json-rpc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/koalex/koa-json-rpc/issues"
+  },
+  "keywords": [
+    "koa",
+    "json-rpc"
+  ],
+  "contributors": [
+    {
+      "name": "Konstantin Aleksandrov",
+      "email": "alexandrovkm@gmail.com",
+      "url": "https://github.com/koalex"
+    }
+  ],
+  "homepage": "https://github.com/koalex/koa-json-rpc#readme",
+  "engines": {
+    "node": ">=8.1.4"
+  },
+  "dependencies": {
+    "debug": "^4.1.1",
+    "koa-router": "^7.4.0"
+  },
+  "devDependencies": {
+    "husky": "^3.1.0",
+    "koa": "^2.11.0",
+    "koa-bodyparser": "^4.2.1",
+    "mocha": "^6.2.2",
+    "npm-check-updates": "^3.2.2",
+    "supertest": "^4.0.2"
+  }
+}
