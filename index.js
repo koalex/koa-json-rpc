@@ -1,5 +1,6 @@
 const debug     = require('debug')('koa-json-rpc');
 const koaRouter = require('koa-router');
+const compose   = require('koa-compose');
 const Jsonrpc   = require('./lib/jsonrpc');
 
 
@@ -78,9 +79,9 @@ module.exports = class Router {
 	set base (prefix) {
 		this._router.prefix(prefix);
 	}
-	method (method, handler) {
+	method (method, ...middlewares) {
 		if (!Jsonrpc.methodIsValid(method)) throw new Error('"method" must be string containing the name of the method to be invoked.');
-		this._handlers[method] = handler;
+		this._handlers[method] = compose(middlewares);
 	}
 	methods () {
 		this.routes();

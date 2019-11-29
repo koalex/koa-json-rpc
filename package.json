@@ -39,6 +39,7 @@
   },
   "dependencies": {
     "debug": "^4.1.1",
+    "koa-compose": "^4.1.0",
     "koa-router": "^7.4.0"
   },
   "devDependencies": {
