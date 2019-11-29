@@ -26,9 +26,8 @@ async function handler (router, context, next, requestObject) { // requestObject
 	ctx.jsonrpc = new Jsonrpc({request: requestObject});
 
 	if (router._handlers[requestObject.method]) {
-		await ((async () => { // async wrapper
-			await router._handlers[requestObject.method](ctx, next);
-		})()).catch(async err => { // err.message err.name err.code err.status err.stack...
+		await Promise.resolve(router._handlers[requestObject.method](ctx, next))
+		.catch(async err => { // err.message err.name err.code err.status err.stack...
 			debug('error: %o', err);
 			if (router.onerror) {
 				try {
@@ -89,8 +88,6 @@ module.exports = class Router {
 	}
 	routes () {
 		return this._router.post('/', async (ctx, next) => {
-			ctx.type = 'json';
-
 			if (!ctx.request.body) {
 				return ctx.body = {
 					jsonrpc: '2.0',
@@ -103,8 +100,16 @@ module.exports = class Router {
 				}
 			}
 			let result;
+			let prevResult = ctx.body;
+
 			debug('request raw: %o', ctx.request.body);
+
+			if (!ctx.state.unhandledJsonRpcRequests) {
+				ctx.state.unhandledJsonRpcRequests = Array.isArray(ctx.request.body) ? {...ctx.request.body.map(v => true)} : {0: true};
+			}
+
 			if (Array.isArray(ctx.request.body)) {
+				ctx.type = 'json';
 				if (!ctx.request.body.length) {
 					result = {
 						jsonrpc: '2.0',
@@ -115,25 +120,47 @@ module.exports = class Router {
 						}
 					};
 				} else {
-					result = await Promise.all(ctx.request.body.map(rpcReq => {
-						return handler(this, ctx, next, rpcReq);
-					}));
+					ctx.type = 'json';
+					result = await Promise.all(
+						ctx.request.body
+							.filter((rpcReq, i) => ctx.state.unhandledJsonRpcRequests[i])
+							.map(rpcReq => handler(this, ctx, next, rpcReq))
+					);
 
-					result = result.filter(res => res !== null && res !== undefined);
+					for (let i = 0, l = result.length; i < l; i++) {
+						let reqResult = result[i];
+						if (!(reqResult && reqResult.error && reqResult.error.code === -32601)) { // method not found
+							delete ctx.state.unhandledJsonRpcRequests[i];
+						}
+					}
+
+					result = result.filter(reqResult => {
+						if (reqResult && reqResult.error && reqResult.error.code === -32601) return false;
+						return reqResult !== null && reqResult !== undefined
+					});
 					if (!result.length) result = null;
 				}
 			} else {
 				result = await handler(this, ctx, next, ctx.request.body);
+				delete ctx.state.unhandledJsonRpcRequests[0];
 			}
 
-			ctx.type = 'json'; // if overwrite in handler
+			if (null !== prevResult && undefined !== prevResult) {
+				if (null !== result && undefined !== result) {
+					result = Array.isArray(prevResult) ? [...prevResult].concat(result) : result.concat(prevResult);
+				} else {
+					result = prevResult;
+				}
+			}
+
 			if (null !== result && undefined !== result) {
 				debug('ctx.body: %o', result);
 				ctx.body = result;
-			} else {
-				ctx.type = 'text';
 			}
 			ctx.status = 200;
+			if (Object.keys(ctx.state.unhandledJsonRpcRequests).length) {
+				return next();
+			}
 		})
 	}
 };
