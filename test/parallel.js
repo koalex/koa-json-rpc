@@ -3,35 +3,8 @@ const http          = require('http');
 const app           = new (require('koa'));
 const koaBodyParser = require('koa-bodyparser'); // application/json , application/x-www-form-urlencoded ONLY
 const Jsonrpc       = require('../index');
-const JsonrpcRouter = new Jsonrpc({
-	base: '/api',
-	onerror: async (err, ctx) => {
-		ctx.throw(err);
-	}
-});
 
-JsonrpcRouter.method('subtract', (ctx, next) => {
-	ctx.body = ctx.jsonrpc.request.params[0] - ctx.jsonrpc.request.params[1];
-});
-JsonrpcRouter.method('update', (ctx, next) => {
-	// ...some code
-});
-JsonrpcRouter.method('sum', (ctx, next) => {
-	let result = 0;
-	ctx.jsonrpc.request.params.forEach(num => result += num);
-	ctx.body = result;
-});
-JsonrpcRouter.method('notify_hello', (ctx, next) => {
-	// ...some code
-});
-JsonrpcRouter.method('notify_sum', (ctx, next) => {
-	// ...some code
-});
-JsonrpcRouter.method('get_data', (ctx, next) => {
-	ctx.body = ['hello', 5];
-});
-
-app.use(koaBodyParser({
+const bodyParserMw   = koaBodyParser({
 	onerror: (err, ctx) => {
 		ctx.status = 200;
 		ctx.body = {
@@ -43,14 +16,86 @@ app.use(koaBodyParser({
 			}
 		};
 	}
-}));
+});
+const JsonrpcRouter  = new Jsonrpc({
+	base: '/api',
+	// parallel: false,
+	bodyParser: bodyParserMw,
+	onerror: async (err, ctx) => {
+		ctx.throw(err);
+	}
+});
+const JsonrpcRouter2 = new Jsonrpc({
+	base: '/api',
+	// parallel: false,
+	bodyParser: bodyParserMw,
+	onerror: async (err, ctx) => {
+		ctx.throw(err);
+	}
+});
+
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
+// Register methods
+JsonrpcRouter.method('subtract', async (ctx, next) => {
+	ctx.jsonrpc.result = ctx.jsonrpc.request.params[0] - ctx.jsonrpc.request.params[1];
+	ctx.body = ctx.jsonrpc.response;
+});
+JsonrpcRouter.method('update', (ctx, next) => {
+	// ...some code
+});
+JsonrpcRouter.method('sum', async (ctx, next) => {
+	let result = 0;
+	ctx.jsonrpc.request.params.forEach(num => result += num);
+	ctx.body = result;
+});
+JsonrpcRouter.method('notify_hello', (ctx, next) => {
+	// ...some code
+});
+JsonrpcRouter2.method('notify_sum', (ctx, next) => {
+	// ...some code
+});
+JsonrpcRouter2.method('get_data', async (ctx, next) => {
+	ctx.body = ['hello', 5];
+});
+JsonrpcRouter2.method('route1', bodyParserMw, async (ctx, next) => {
+	ctx.body = 3;
+});
+JsonrpcRouter2.method('route2', async (ctx, next) => {
+	ctx.body = 7;
+});
+
+// Apply JSON-RPC
 app.use(JsonrpcRouter.methods());
+app.use(JsonrpcRouter2.methods());
 
 const server  = http.createServer(app.callback());
 const request = require('supertest')(server);
 
-describe('KOA.js JSON-RPC 2.0', () => {
+describe('KOA.js JSON-RPC 2.0 # PARALLEL', () => {
 	describe('https://www.jsonrpc.org/specification#examples', () => {
+		it('rpc call Batch for different instances of router', function (done) {
+			request
+				.post('/api')
+				.send([
+					{jsonrpc: '2.0', method: 'route1', params: [1,2], id: 1},
+					{jsonrpc: '2.0', method: 'route2', params: [3,4], id: 2},
+				])
+				.set('Accept', 'application/json')
+				.set('Content-Type', 'application/json')
+				.expect('Content-Type', /json/)
+				.expect(200)
+				.expect(response => {
+					assert.deepStrictEqual(
+						response.body,
+						[
+							{jsonrpc: '2.0', result: 3, id: 1},
+							{jsonrpc: '2.0', result: 7, id: 2},
+						]
+					);
+				})
+				.end(done);
+		});
 		it('rpc call with positional parameters #1', function (done) {
 			request
 				.post('/api')
@@ -88,7 +133,7 @@ describe('KOA.js JSON-RPC 2.0', () => {
 				.post('/api')
 				.send({jsonrpc: '2.0', method: 'update', params: [1,2,3,4,5]})
 				.set('Content-Type', 'application/json')
-				.expect('Content-Type', /text/)
+				// .expect('Content-Type', /text/)
 				.expect(200)
 				.expect(response => {
 					assert.deepStrictEqual(response.body, {});
