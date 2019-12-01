@@ -4,54 +4,69 @@ const compose   = require('koa-compose');
 const Jsonrpc   = require('./lib/jsonrpc');
 
 
-async function handler (router, context, next, requestObject) { // requestObject = ctx.request.body;
+const handler = async (router, context, next, requestObject, responseKey) => { // requestObject = ctx.request.body;
 	debug('request: %o', requestObject);
-	if (!Jsonrpc.requestIsValid(requestObject)) { // если невалидный запрос
-		return Jsonrpc.handleInvalidRequest(requestObject);
+	if (!Jsonrpc.requestIsValid(requestObject)) {
+		return context.state.jsonRpcResponses[responseKey] = Jsonrpc.handleInvalidRequest(requestObject);
 	}
-	// const ctx = Object.assign(Object.create(Object.getPrototypeOf(ctx)), ctx);
-	let result;
-	const ctx = Object.create(context, {
+	const jsonrpc = new Jsonrpc({request: requestObject});
+	const _ctx = Object.create(context, {
 		body: {
 			configurable: false,
 			get: function () {
-				return result;
+				return context.state.jsonRpcResponses[responseKey];
 			},
 			set: function (val) {
-				result = val;
+				if (Jsonrpc.responseIsValid(val)) {
+					context.state.jsonRpcResponses[responseKey] = val;
+				} else {
+					jsonrpc.result = val;
+					context.state.jsonRpcResponses[responseKey] = jsonrpc.response;
+				}
 			}
 		}
 	});
 
-	ctx.jsonrpc = new Jsonrpc({request: requestObject});
+	_ctx.jsonrpc = jsonrpc;
+
+	let {proxy, revoke} = Proxy.revocable(_ctx, {
+		set (target, prop, val, receiver) {
+			if ('body' === prop) {
+				target[prop] = val;
+			} else {
+				context[prop] = val;
+			}
+			return true;
+		}
+	});
+
+	const ctx = proxy;
 
 	if (router._handlers[requestObject.method]) {
 		await Promise.resolve(router._handlers[requestObject.method](ctx, next))
-		.catch(async err => { // err.message err.name err.code err.status err.stack...
-			debug('error: %o', err);
-			if (router.onerror) {
-				try {
-					debug('trying handle error');
-					await router.onerror(err, ctx);
-				} catch (err) {
-					debug('onerror is down: %o', err);
+			.catch(async err => { // err.message err.name err.code err.status err.stack...
+				debug('error: %o', err);
+				if (router.onerror) {
+					try {
+						debug('trying handle error');
+						await router.onerror(err, ctx);
+					} catch (err) {
+						debug('onerror is down: %o', err);
+						ctx.jsonrpc.serverError(null, err);
+						ctx.body = ctx.jsonrpc.response;
+					}
+
+				} else {
 					ctx.jsonrpc.serverError(null, err);
 					ctx.body = ctx.jsonrpc.response;
 				}
-
-			} else {
-				ctx.jsonrpc.serverError(null, err);
-				ctx.body = ctx.jsonrpc.response;
-			}
-		});
-
-		if (ctx.body !== undefined && ctx.body !== null) {
-			ctx.jsonrpc.result = ctx.body;
-			ctx.body = ctx.jsonrpc.response;
+			});
+		if (Jsonrpc.isNotification(requestObject)) {
+			ctx.body = null;
 		}
-		return ctx.body;
-	} else {
-		return  {
+		revoke();
+	} else { // TODO: does this case is possible ?
+		context.state.jsonRpcResponses[responseKey] =  {
 			jsonrpc: '2.0',
 			id: ctx.jsonrpc.id || null,
 			error: {
@@ -59,11 +74,12 @@ async function handler (router, context, next, requestObject) { // requestObject
 				message: 'Method not found',
 			}
 		};
+		revoke();
 	}
-}
+};
 
 module.exports = class Router {
-	constructor (props) {
+	constructor (props = {}) {
 		const koaRouterProps = {};
 		if (props.base) koaRouterProps.prefix = props.base;
 		this._router = new koaRouter(koaRouterProps);
@@ -71,6 +87,8 @@ module.exports = class Router {
 		if (props.onerror) {
 			this.onerror = props.onerror;
 		}
+		this.parallel = ('parallel' in props) ? Boolean(props.parallel) : true;
+		this.bodyParser = props.bodyParser;
 	}
 	allowedMethods (opts) {
 		this._router.allowedMethods(opts);
@@ -79,88 +97,127 @@ module.exports = class Router {
 		this._router.prefix(prefix);
 	}
 	method (method, ...middlewares) {
-		if (!Jsonrpc.methodIsValid(method)) throw new Error('"method" must be string containing the name of the method to be invoked.');
+		if (!Jsonrpc.methodIsValid(method)) {
+			throw new Error('"method" must be string containing the name of the method to be invoked and cannot starts with "rpc."');
+		}
 		this._handlers[method] = compose(middlewares);
 	}
 	methods () {
 		this.routes();
 		return this._router.routes();
 	}
+	get methodsList () {
+		return Object.keys(this._handlers);
+	}
+	hasAllHandlersForRequest (reqBody) {
+		if (Array.isArray(reqBody)) {
+			return reqBody.every(req => {
+				if (!isObject(req)) return true;
+				if (isObject(req) && ('method' in req) && this._handlers[req.method]) return true;
+				return false;
+			});
+		}
+
+		if (isObject(reqBody)) {
+			if (!('method' in reqBody)) return true;
+			if (this._handlers[reqBody.method]) return true;
+			if (!Jsonrpc.methodIsValid(reqBody.method)) return true;
+			return false;
+		}
+	}
+
 	routes () {
-		return this._router.post('/', async (ctx, next) => {
+		return this._router.post('/', (this.bodyParser || function (ctx, next) { return next(); }), async (ctx, next) => {
 			if (!ctx.request.body) {
-				return ctx.body = {
-					jsonrpc: '2.0',
-					id: null,
-					error: {
-						code: -32700,
-						message: 'Parse error',
-						// data: 'Invalid JSON was received by the server. An error occurred on the server while parsing the JSON text.'
-					}
-				}
+				return ctx.body = Jsonrpc.parseError;
 			}
-			let result;
-			let prevResult = ctx.body;
+			const parallel = this.parallel;
 
 			debug('request raw: %o', ctx.request.body);
-
-			if (!ctx.state.unhandledJsonRpcRequests) {
-				ctx.state.unhandledJsonRpcRequests = Array.isArray(ctx.request.body) ? {...ctx.request.body.map(v => true)} : {0: true};
+			let initialRouter = false;
+			if (!ctx.state.jsonRpcResponses) {
+				initialRouter = true;
+				ctx.state.jsonRpcResponses = Array.isArray(ctx.request.body) ? {...ctx.request.body.map(v => undefined)} : {0: undefined};
 			}
 
 			if (Array.isArray(ctx.request.body)) {
 				ctx.type = 'json';
 				if (!ctx.request.body.length) {
-					result = {
-						jsonrpc: '2.0',
-						id: null,
-						error: {
-							code: -32600,
-							message: 'Invalid Request',
-						}
-					};
+					ctx.state.jsonRpcResponses['0'] = Jsonrpc.invalidRequest;
 				} else {
-					ctx.type = 'json';
-					result = await Promise.all(
-						ctx.request.body
-							.filter((rpcReq, i) => ctx.state.unhandledJsonRpcRequests[i])
-							.map(rpcReq => handler(this, ctx, next, rpcReq))
-					);
+					if (parallel) {
+						let currentRouterHandlers = [];
+						if (this.hasAllHandlersForRequest(ctx.request.body)) {
+							currentRouterHandlers = ctx.request.body.map((rpcReq, i) => handler(this, ctx, next, rpcReq, i));
+						} else {
+							currentRouterHandlers = ctx.request.body.reduce((acc, rpcReq, i, body) => {
+								if (!isObject(rpcReq)) {
+									acc.push(handler(this, ctx, next, rpcReq, i));
+									return acc;
+								}
+								if (Boolean(this._handlers[rpcReq.method]) || !('method' in rpcReq)) {
+									acc.push(handler(this, ctx, next, rpcReq, i));
+									return acc;
+								}
+								return acc;
+							}, []).concat(parallel ? next() : []);
+						}
 
-					for (let i = 0, l = result.length; i < l; i++) {
-						let reqResult = result[i];
-						if (!(reqResult && reqResult.error && reqResult.error.code === -32601)) { // method not found
-							delete ctx.state.unhandledJsonRpcRequests[i];
+						await Promise.all(currentRouterHandlers);
+					} else {
+						for (let i = 0, l = ctx.request.body.length; i < l; i++) {
+							const rpcReq = ctx.request.body[i];
+							if (!Jsonrpc.requestIsValid(rpcReq) || this.hasAllHandlersForRequest(rpcReq)) {
+								await handler(this, ctx, next, rpcReq, i)
+							}
+						}
+						if (Object.values(ctx.state.jsonRpcResponses).filter(v => v === undefined).length) {
+							await next();
 						}
 					}
-
-					result = result.filter(reqResult => {
-						if (reqResult && reqResult.error && reqResult.error.code === -32601) return false;
-						return reqResult !== null && reqResult !== undefined
-					});
-					if (!result.length) result = null;
 				}
 			} else {
-				result = await handler(this, ctx, next, ctx.request.body);
-				delete ctx.state.unhandledJsonRpcRequests[0];
-			}
-
-			if (null !== prevResult && undefined !== prevResult) {
-				if (null !== result && undefined !== result) {
-					result = Array.isArray(prevResult) ? [...prevResult].concat(result) : result.concat(prevResult);
+				if (this.hasAllHandlersForRequest(ctx.request.body)) {
+					await handler(this, ctx, next, ctx.request.body, 0);
 				} else {
-					result = prevResult;
+					await next();
 				}
 			}
 
-			if (null !== result && undefined !== result) {
-				debug('ctx.body: %o', result);
-				ctx.body = result;
-			}
-			ctx.status = 200;
-			if (Object.keys(ctx.state.unhandledJsonRpcRequests).length) {
-				return next();
+			if (initialRouter) {
+				ctx.status = 200;
+				let finalResult = isBatch(ctx.request.body) ? [] : ctx.state.jsonRpcResponses[0];
+
+				if (isBatch(ctx.request.body)) { // batch
+					for (let i in ctx.state.jsonRpcResponses) {
+						const res = ctx.state.jsonRpcResponses[i];
+						if (res === undefined) {
+							let response = Jsonrpc.methodNotFound;
+								response.id = (Array.isArray(ctx.request.body) ? ctx.request.body[Number(i)].id : ctx.request.body.id) || null;
+							finalResult.push(response);
+							continue;
+						}
+						if (res !== null) {
+							finalResult.push(res);
+						}
+					}
+					if (!finalResult.length) finalResult = null;
+				} else if (undefined === finalResult) {
+					let response = Jsonrpc.methodNotFound;
+						response.id = ctx.request.body.id || null;
+					finalResult = response;
+				}
+
+				if (null !== finalResult) ctx.body = finalResult;
+
+				delete ctx.state.jsonRpcResponses;
 			}
 		})
 	}
 };
+function isObject (obj) {
+	return '[object Object]' === Object.prototype.toString.call(obj);
+}
+function isBatch (req) {
+	return Array.isArray(req) && req.length;
+}
