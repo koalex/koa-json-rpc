@@ -1,34 +1,25 @@
 const assert        = require('assert').strict;
 const http          = require('http');
 const app           = new (require('koa'));
+const Router        = require('koa-router');
 const koaBodyParser = require('koa-bodyparser'); // application/json , application/x-www-form-urlencoded ONLY
 const Jsonrpc       = require('../index');
 
-const bodyParserMw   = koaBodyParser({
+const router = new Router({prefix: '/api'});
+const bodyParserMw = koaBodyParser({
 	onerror: (err, ctx) => {
 		ctx.status = 200;
-		ctx.body = {
-			id: null,
-			jsonrpc: '2.0',
-			error: {
-				code: -32700,
-				message: 'Parse error'
-			}
-		};
+		ctx.body = Jsonrpc.parseError;
 	}
 });
-const JsonrpcRouter  = new Jsonrpc({
-	base: '/api',
-	// parallel: false,
+const JsonrpcRouter = new Jsonrpc({
+	parallel: false,
 	bodyParser: bodyParserMw,
 	onerror: async (err, ctx) => {
 		ctx.throw(err);
 	}
 });
 const JsonrpcRouter2 = new Jsonrpc({
-	base: '/api',
-	// parallel: false,
-	bodyParser: bodyParserMw,
 	onerror: async (err, ctx) => {
 		ctx.throw(err);
 	}
@@ -58,16 +49,17 @@ JsonrpcRouter2.method('notify_sum', (ctx, next) => {
 JsonrpcRouter2.method('get_data', async (ctx, next) => {
 	ctx.body = ['hello', 5];
 });
-JsonrpcRouter2.method('route1', bodyParserMw, async (ctx, next) => {
+JsonrpcRouter.method('route1', bodyParserMw, async (ctx, next) => {
 	ctx.body = 3;
 });
 JsonrpcRouter2.method('route2', async (ctx, next) => {
 	ctx.body = 7;
 });
 
-// Apply JSON-RPC
-app.use(JsonrpcRouter.methods());
-app.use(JsonrpcRouter2.methods());
+router.post('/', JsonrpcRouter.middleware);
+router.post('/', bodyParserMw, JsonrpcRouter2.middleware);
+
+app.use(router.routes());
 
 const server  = http.createServer(app.callback());
 const request = require('supertest')(server);
