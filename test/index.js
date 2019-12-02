@@ -125,7 +125,7 @@ describe('KOA.js JSON-RPC 2.0 # PARALLEL', () => {
 				.post('/api')
 				.send({jsonrpc: '2.0', method: 'update', params: [1,2,3,4,5]})
 				.set('Content-Type', 'application/json')
-				// .expect('Content-Type', /text/)
+				.expect('Content-Type', /text/)
 				.expect(200)
 				.expect(response => {
 					assert.deepStrictEqual(response.body, {});
