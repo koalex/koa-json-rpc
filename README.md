@@ -10,7 +10,7 @@
 Install using [npm](https://www.npmjs.org/):
 
 ```sh
-npm install koa-json-rpc --save
+npm i @koalex/koa-json-rpc --save
 ```
 ## API Reference
   
