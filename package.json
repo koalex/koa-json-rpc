@@ -1,6 +1,6 @@
 {
   "name": "@koalex/koa-json-rpc",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "JSON-RPC 2.0 middleware for Koa.js which implements the https://www.jsonrpc.org/specification",
   "main": "index.js",
   "scripts": {
