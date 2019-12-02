@@ -1,7 +1,7 @@
 {
-  "name": "koa-json-rpc",
+  "name": "@koalex/koa-json-rpc",
   "version": "1.0.0",
-  "description": "JSON-RPC 2.0 middleware for Koa.js.",
+  "description": "JSON-RPC 2.0 middleware for Koa.js which implements the https://www.jsonrpc.org/specification",
   "main": "index.js",
   "scripts": {
     "test": "mocha \"./test/*.js\" --recursive --exit",
@@ -17,7 +17,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/koalex/koa-json-rpc.git"
+    "url": "git+https://github.com/koalex/koa-json-rpc.git"
   },
   "bugs": {
     "url": "https://github.com/koalex/koa-json-rpc/issues"
@@ -49,5 +49,9 @@
     "mocha": "^6.2.2",
     "npm-check-updates": "^3.2.2",
     "supertest": "^4.0.2"
+  },
+  "directories": {
+    "lib": "lib",
+    "test": "test"
   }
 }
