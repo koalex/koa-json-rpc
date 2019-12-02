@@ -57,7 +57,7 @@ const handler = async (router, context, next, requestObject, responseKey) => { /
 					}
 
 				} else {
-					ctx.jsonrpc.serverError(null, err);
+					ctx.jsonrpc.serverError(null, ('status' in err) ? err : err.toString());
 					ctx.body = ctx.jsonrpc.response;
 				}
 			});
@@ -80,33 +80,22 @@ const handler = async (router, context, next, requestObject, responseKey) => { /
 
 module.exports = class Router {
 	constructor (props = {}) {
-		const koaRouterProps = {};
-		if (props.base) koaRouterProps.prefix = props.base;
-		this._router = new koaRouter(koaRouterProps);
 		this._handlers = {};
-		if (props.onerror) {
-			this.onerror = props.onerror;
-		}
-		this.parallel = ('parallel' in props) ? Boolean(props.parallel) : true;
+		this.onerror = props.onerror;
+		this.parallel = Boolean(props.parallel) || true;
 		this.bodyParser = props.bodyParser;
 	}
-	allowedMethods (opts) {
-		this._router.allowedMethods(opts);
-	}
-	set base (prefix) {
-		this._router.prefix(prefix);
+	static get parseError () {
+		return Jsonrpc.parseError;
 	}
 	method (method, ...middlewares) {
 		if (!Jsonrpc.methodIsValid(method)) {
 			throw new Error('"method" must be string containing the name of the method to be invoked and cannot starts with "rpc."');
 		}
 		this._handlers[method] = compose(middlewares);
+		return this;
 	}
-	methods () {
-		this.routes();
-		return this._router.routes();
-	}
-	get methodsList () {
+	get methods () {
 		return Object.keys(this._handlers);
 	}
 	hasAllHandlersForRequest (reqBody) {
@@ -126,17 +115,17 @@ module.exports = class Router {
 		}
 	}
 
-	routes () {
-		return this._router.post('/', (this.bodyParser || function (ctx, next) { return next(); }), async (ctx, next) => {
+	get middleware () {
+		const middleware = async (ctx, next) => {
 			if (!ctx.request.body) {
 				return ctx.body = Jsonrpc.parseError;
 			}
 			const parallel = this.parallel;
 
 			debug('request raw: %o', ctx.request.body);
-			let initialRouter = false;
+			let isInitialMiddleware = false;
 			if (!ctx.state.jsonRpcResponses) {
-				initialRouter = true;
+				isInitialMiddleware = true;
 				ctx.state.jsonRpcResponses = Array.isArray(ctx.request.body) ? {...ctx.request.body.map(v => undefined)} : {0: undefined};
 			}
 
@@ -184,7 +173,7 @@ module.exports = class Router {
 				}
 			}
 
-			if (initialRouter) {
+			if (isInitialMiddleware) {
 				ctx.status = 200;
 				let finalResult = isBatch(ctx.request.body) ? [] : ctx.state.jsonRpcResponses[0];
 
@@ -193,7 +182,7 @@ module.exports = class Router {
 						const res = ctx.state.jsonRpcResponses[i];
 						if (res === undefined) {
 							let response = Jsonrpc.methodNotFound;
-								response.id = (Array.isArray(ctx.request.body) ? ctx.request.body[Number(i)].id : ctx.request.body.id) || null;
+							response.id = (Array.isArray(ctx.request.body) ? ctx.request.body[Number(i)].id : ctx.request.body.id) || null;
 							finalResult.push(response);
 							continue;
 						}
@@ -204,7 +193,7 @@ module.exports = class Router {
 					if (!finalResult.length) finalResult = null;
 				} else if (undefined === finalResult) {
 					let response = Jsonrpc.methodNotFound;
-						response.id = ctx.request.body.id || null;
+					response.id = ctx.request.body.id || null;
 					finalResult = response;
 				}
 
@@ -212,7 +201,12 @@ module.exports = class Router {
 
 				delete ctx.state.jsonRpcResponses;
 			}
-		})
+		};
+		if (this.bodyParser) {
+			return compose([this.bodyParser, middleware]);
+		}
+
+		return middleware;
 	}
 };
 function isObject (obj) {
