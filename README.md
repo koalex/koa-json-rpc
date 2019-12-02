@@ -115,7 +115,7 @@ jsonrpc.method('someHttpErrMethod', (ctx, next) => {
 */
 /*
     REQUEST -> {id: 3, jsonrpc: '2.0', method: 'someHttpErrMethod', params: [1, 2, 3]}
-    RESPONSE <- {jsonrpc: '2.0', id: 2, error: {code: -32000: message: 'Server error', data: {message: 'Internal Server Error'}}}
+    RESPONSE <- {jsonrpc: '2.0', id: 3, error: {code: -32000: message: 'Server error', data: {message: 'Internal Server Error'}}}
 */
 ```
 Batch:
