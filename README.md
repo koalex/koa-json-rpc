@@ -38,7 +38,7 @@ Create a new JSON-RPC
 | --- | --- | --- |
 | [opts] | <code>Object</code> |  |
 | [opts.onerror] | <code>Function</code> |  |
-| [opts.parallel] | <code>Bollean</code> | default is <code>true</code> |
+| [opts.parallel] | <code>Boolean</code> | default is <code>true</code> |
 | [opts.bodyParser] | <code>Function</code> | <code>koa-bodyparser</code> or <code>async-busboy</code> or some another. |
 
 **Examples**  
