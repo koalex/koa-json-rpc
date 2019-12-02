@@ -48,7 +48,7 @@ Basic usage:
 const Koa        = require('koa');
 const Router     = require('koa-router');
 const bodyParser = require('koa-bodyparser');
-const Jsonrpc    = require('koa-json-rpc');
+const Jsonrpc    = require('@koalex/koa-json-rpc');
 
 const app     = new Koa();
 const router  = new Router();
@@ -123,7 +123,7 @@ Batch:
 const Koa        = require('koa');
 const Router     = require('koa-router');
 const bodyParser = require('koa-bodyparser');
-const Jsonrpc    = require('koa-json-rpc');
+const Jsonrpc    = require('@koalex/koa-json-rpc');
 
 const app    = new Koa();
 const router = new Router();
@@ -169,7 +169,7 @@ Batch with different instances of Jsonrpc:
 const Koa           = require('koa');
 const Router        = require('koa-router');
 const koaBodyParser = require('koa-bodyparser');
-const Jsonrpc       = require('koa-json-rpc');
+const Jsonrpc       = require('@koalex/koa-json-rpc');
 
 const app     = new Koa();
 const router  = new Router();
@@ -263,7 +263,7 @@ Returns error reponse object:
 const Koa        = require('koa');
 const Router     = require('koa-router');
 const bodyParser = require('koa-bodyparser');
-const Jsonrpc    = require('koa-json-rpc');
+const Jsonrpc    = require('@koalex/koa-json-rpc');
 
 const app    = new Koa();
 const router = new Router();
