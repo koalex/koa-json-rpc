@@ -1,13 +1,13 @@
-const debug     = require('debug')('koa-json-rpc');
-const koaRouter = require('koa-router');
-const compose   = require('koa-compose');
-const Jsonrpc   = require('./lib/jsonrpc');
+const debug   = require('debug')('koa-json-rpc');
+const compose = require('koa-compose');
+const Jsonrpc = require('./lib/jsonrpc');
 
-
-const handler = async (router, context, next, requestObject, responseKey) => { // requestObject = ctx.request.body;
-	debug('request: %o', requestObject);
+const handler = async (router, context, next, requestObject, responseKey) => {
+	debug('start handle: %o', requestObject);
 	if (!Jsonrpc.requestIsValid(requestObject)) {
-		return context.state.jsonRpcResponses[responseKey] = Jsonrpc.handleInvalidRequest(requestObject);
+		const result = Jsonrpc.handleInvalidRequest(requestObject);
+		debug('result for %o: %o', requestObject, result);
+		return context.state.jsonRpcResponses[responseKey] = result;
 	}
 	const jsonrpc = new Jsonrpc({request: requestObject});
 	const _ctx = Object.create(context, {
@@ -45,13 +45,12 @@ const handler = async (router, context, next, requestObject, responseKey) => { /
 	if (router._handlers[requestObject.method]) {
 		await Promise.resolve(router._handlers[requestObject.method](ctx, next))
 			.catch(async err => { // err.message err.name err.code err.status err.stack...
-				debug('error: %o', err);
 				if (router.onerror) {
 					try {
-						debug('trying handle error');
+						debug(requestObject.method + ': trying handle error');
 						await router.onerror(err, ctx);
 					} catch (err) {
-						debug('onerror is down: %o', err);
+						debug(requestObject.method + ': onerror is down: %o', err);
 						ctx.jsonrpc.serverError(null, err);
 						ctx.body = ctx.jsonrpc.response;
 					}
@@ -80,6 +79,8 @@ const handler = async (router, context, next, requestObject, responseKey) => { /
 
 module.exports = class Router {
 	constructor (props = {}) {
+		debug('creating new json-rpc');
+		debug('props: %o', props);
 		this._handlers = {};
 		this.onerror = props.onerror;
 		this.parallel = Boolean(props.parallel) || true;
@@ -89,6 +90,7 @@ module.exports = class Router {
 		return Jsonrpc.parseError;
 	}
 	method (method, ...middlewares) {
+		debug('register method: %s', method);
 		if (!Jsonrpc.methodIsValid(method)) {
 			throw new Error('"method" must be string containing the name of the method to be invoked and cannot starts with "rpc."');
 		}
@@ -99,6 +101,7 @@ module.exports = class Router {
 		return Object.keys(this._handlers);
 	}
 	hasAllHandlersForRequest (reqBody) {
+		debug('checking for handlers for a %0', reqBody);
 		if (Array.isArray(reqBody)) {
 			return reqBody.every(req => {
 				if (!isObject(req)) return true;
@@ -122,12 +125,14 @@ module.exports = class Router {
 			}
 			const parallel = this.parallel;
 
-			debug('request raw: %o', ctx.request.body);
+			debug('request: %o', ctx.request.body);
 			let isInitialMiddleware = false;
 			if (!ctx.state.jsonRpcResponses) {
 				isInitialMiddleware = true;
 				ctx.state.jsonRpcResponses = Array.isArray(ctx.request.body) ? {...ctx.request.body.map(v => undefined)} : {0: undefined};
 			}
+
+			debug('is initial middleware: ', isInitialMiddleware);
 
 			if (Array.isArray(ctx.request.body)) {
 				ctx.type = 'json';
@@ -197,7 +202,10 @@ module.exports = class Router {
 					finalResult = response;
 				}
 
-				if (null !== finalResult) ctx.body = finalResult;
+				if (null !== finalResult) {
+					debug('response: %o', finalResult);
+					ctx.body = finalResult;
+				}
 
 				delete ctx.state.jsonRpcResponses;
 			}
